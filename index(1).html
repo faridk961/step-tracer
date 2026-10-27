@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Step Tracer</title>
+<style>
+:root{--bg:#f2f4f1;--panel:#fff;--ink:#1b2630;--mute:#5b6a77;--line:#d3dbd5;--grid:#e1e7e2;--ok:#0b7a6a;--turn:#c2410c;--raw:#8995a1;--btn:#1b2630;--btnt:#fff;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#0f161c;--panel:#17212a;--ink:#e6edf2;--mute:#93a2af;--line:#2a3743;--grid:#1c2832;--ok:#2dd4bf;--turn:#fb923c;--raw:#6a7a88;--btn:#e6edf2;--btnt:#0f161c}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#0f161c;--panel:#17212a;--ink:#e6edf2;--mute:#93a2af;--line:#2a3743;--grid:#1c2832;--ok:#2dd4bf;--turn:#fb923c;--raw:#6a7a88;--btn:#e6edf2;--btnt:#0f161c}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;max-width:720px;margin:0 auto}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 16px;padding:12px 16px 8px}
+.big{font-size:44px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.k{color:var(--mute);font-size:12px}.v{font-weight:600;font-variant-numeric:tabular-nums}
+.stats{display:flex;gap:16px;margin-left:auto}
+main{flex:1;min-height:0;position:relative;border-block:1px solid var(--line);background:var(--bg)}
+canvas{width:100%;height:100%;display:block}
+#msg{position:absolute;left:12px;top:8px;right:12px;font-size:13px;color:var(--mute)}
+footer{background:var(--panel);padding:10px 16px 12px;display:grid;gap:10px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:9px 14px;border-radius:8px;cursor:pointer}
+button.on,button.go{background:var(--btn);color:var(--btnt);border-color:var(--btn)}
+button.go{flex:1;font-weight:600}
+button:focus-visible,input:focus-visible{outline:2px solid var(--ok);outline-offset:2px}
+.hint{color:var(--mute);font-size:13px}
+label{font-size:13px;color:var(--mute);display:flex;gap:6px;align-items:center}
+textarea{width:100%;height:90px;box-sizing:border-box;font:12px monospace;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px}
+pre{font:12px/1.5 monospace;white-space:pre-wrap;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;margin:0}
+select{font:inherit;font-weight:600;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:4px 6px}
+[hidden]{display:none!important}
+</style></head><body>
+<header>
+  <div><div class="big" id="n">0</div><div class="k">steps</div></div>
+  <div><select id="mt" aria-label="Minimum turn angle"><option value="15">15°</option><option value="25" selected>25°</option><option value="35">35°</option><option value="45">45°</option><option value="60">60°</option><option value="75">75°</option><option value="90">90°</option></select><div class="k">min turn</div></div>
+  <div class="stats">
+    <div><div class="v" id="hd">0°</div><div class="k">turned</div></div>
+    <div><div class="v" id="ln">0</div><div class="k">lines</div></div>
+    <div><div class="v" id="hz">0</div><div class="k">Hz</div></div>
+  </div>
+</header>
+<main><canvas id="cv"></canvas><div id="msg">Choose how you carry the phone, then press Start and stand still for two seconds.</div></main>
+<footer>
+  <div class="row">
+    <button id="m-hand" class="on">Phone in hand</button>
+    <button id="m-pocket">Pocket or bag</button>
+  </div>
+  <div class="hint" id="hint"></div>
+  <div class="row">
+    <button class="go" id="go">Start</button>
+    <button id="demo">Demo walk</button>
+    <button id="reset">Reset</button>
+    <button id="data">Data</button>
+    <button id="test">Test</button>
+  </div>
+  <label><input type="checkbox" id="flip"> Mirror turns (use if left and right look swapped)</label>
+  <textarea id="out" hidden readonly></textarea>
+  <pre id="dbg" hidden></pre>
+</footer>
+<script>
+const $=id=>document.getElementById(id),D=Math.PI/180;
+const cv=$("cv"),cx=cv.getContext("2d");
+const P={hand:{a:.3,floor:1.1,minInt:320,g:.05,hint:"Hold the phone steady in front of you, flat or upright, and keep the same grip."},
+         pocket:{a:.18,floor:1.6,minInt:380,g:.02,hint:"Front pocket or bag, same position all walk. Heading is noisier here, so lines rely on the 10-step average."}};
+let mode="hand",run=false,calib=null,steps=[],heading=0,g=[0,0,9.8],base=9.8,sm=0,p1=0,p2=0,lastEv=0,lastStep=0,peak=3,hz=0,W=0,H=0,lock=null,demoId=0,watch=0;
+const dif=(a,b)=>((a-b+540)%360)-180;
+let cand=[],walking=false,lastAcc=0,dbg={A:0,al:0,be:0,ga:0,o:0},oLast=null,rr=[0,0,0];
+const cmean=hs=>{let s=0,c=0;for(const h of hs){s+=Math.sin(h*D);c+=Math.cos(h*D)}return(Math.atan2(s,c)/D+360)%360};
+const say=t=>$("msg").textContent=t;
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+function setMode(m){mode=m;$("m-hand").classList.toggle("on",m=="hand");$("m-pocket").classList.toggle("on",m=="pocket");$("hint").textContent=P[m].hint}
+$("m-hand").onclick=()=>setMode("hand");$("m-pocket").onclick=()=>setMode("pocket");setMode("hand");
+
+function onMotion(e){
+  const a=e.accelerationIncludingGravity,r=e.rotationRate,now=performance.now();
+  if(!a||a.x==null)return;
+  const dt=Math.min(Math.max((now-lastEv)/1000,.001),.2);lastEv=now;watch=now;
+  hz+=(1/dt-hz)*.05;
+  const q=P[mode];
+  g[0]+=q.g*(a.x-g[0]);g[1]+=q.g*(a.y-g[1]);g[2]+=q.g*(a.z-g[2]);
+  const gm=Math.hypot(g[0],g[1],g[2])||9.8;
+  let w=r?((r.alpha||0)*g[2]+(r.beta||0)*g[0]+(r.gamma||0)*g[1])/gm:0;
+  if(calib){
+    calib.s+=w;calib.n++;
+    if(now-calib.t0>2000){calib.bias=calib.s/calib.n;run=true;say("Tracing. Walk normally.");calib.done=true}
+    if(!calib.done)return;
+  }
+  rr=[r?r.alpha||0:0,r?r.beta||0:0,r?r.gamma||0:0];
+  const gmag=Math.hypot(rr[0],rr[1],rr[2]);
+  dbg.al+=rr[0]*dt;dbg.be+=rr[1]*dt;dbg.ga+=rr[2]*dt;dbg.A+=(w-calib.bias)*dt;
+  w-=calib.bias;if(Math.abs(w)<.8)w=0;
+  heading-=w*dt*($("flip").checked?-1:1);
+  const m=Math.hypot(a.x,a.y,a.z);base+=.02*(m-base);sm+=q.a*((m-base)-sm);
+  if(p1>p2&&p1>=sm&&now-lastStep>q.minInt&&p1>Math.max(q.floor,.5*peak)&&gmag<300){
+    onPeak(now,((heading%360)+360)%360);peak=.8*peak+.2*p1;lastStep=now;
+  }
+  p2=p1;p1=sm;
+  if(now-lastStep>2500)peak=Math.max(q.floor*2,peak*.995);
+}
+
+function commit(h){steps.push({t:Date.now(),h});draw()}
+function onPeak(now,h){
+  if(walking&&now-lastAcc>1500)walking=false;
+  if(walking){lastAcc=now;commit(h);return}
+  cand=cand.filter(c=>now-c.t<1800);cand.push({t:now,h});
+  if(cand.length>=3){
+    const iv=[cand[1].t-cand[0].t,cand[2].t-cand[1].t];
+    if(iv.every(v=>v>=300&&v<=1100)&&Math.abs(iv[0]-iv[1])<.4*Math.max(...iv)){walking=true;lastAcc=now;cand.forEach(c=>commit(c.h));cand=[]}
+    else cand.shift();
+  }
+}
+function build(){
+  const segs=[];let cur=[],tb=[];
+  const minTurn=+$("mt").value,raw=steps.map((s,i)=>i>=3&&Math.abs(dif(s.h,steps[i-3].h))>10),turn=raw.slice();
+  for(let i=0;i<raw.length;){
+    if(!raw[i]){i++;continue}
+    let j=i;while(j+1<raw.length&&raw[j+1])j++;
+    if(Math.abs(dif(steps[j].h,steps[i-3].h))<minTurn)for(let k=i;k<=j;k++)turn[k]=false;
+    i=j+1;
+  }
+  const fc=p=>{if(cur.length){segs.push({k:"line",n:cur.length,h:cmean(cur.map(s=>s.h)),partial:p});cur=[]}};
+  const ft=()=>{for(const s of tb)segs.push({k:"turn",n:1,h:s.h});tb=[]};
+  steps.forEach((s,i)=>{
+    const turning=turn[i];
+    if(turning){fc(false);tb.push(s)}else{ft();cur.push(s);if(cur.length==10)fc(false)}
+  });
+  fc(true);ft();
+  const out=[];
+  for(const s of segs){
+    const l=out[out.length-1];
+    if(l&&l.k=="line"&&s.k=="line"&&Math.abs(dif(s.h,l.h))<8){
+      l.h=cmean([...Array(l.n).fill(l.h),...Array(s.n).fill(s.h)]);l.n+=s.n;l.partial=s.partial;
+    }else out.push({...s});
+  }
+  const pts=[{x:0,y:0}];let x=0,y=0;
+  for(const s of out){x+=s.n*Math.sin(s.h*D);y+=s.n*Math.cos(s.h*D);pts.push({x,y})}
+  return{segs:out,pts};
+}
+
+function fit(){const r=cv.getBoundingClientRect(),d=devicePixelRatio||1;cv.width=r.width*d;cv.height=r.height*d;cx.setTransform(d,0,0,d,0,0);W=r.width;H=r.height;draw()}
+function draw(){
+  if(!W)return;
+  const{segs,pts}=build();
+  const raw=[{x:0,y:0}];let rx=0,ry=0;
+  for(const s of steps){rx+=Math.sin(s.h*D);ry+=Math.cos(s.h*D);raw.push({x:rx,y:ry})}
+  let x0=-12,x1=12,y0=-12,y1=12;
+  for(const p of pts.concat(raw)){x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);y0=Math.min(y0,p.y);y1=Math.max(y1,p.y)}
+  const m=30,sc=Math.min((W-2*m)/(x1-x0),(H-2*m)/(y1-y0),14);
+  const ox=W/2-(x0+x1)/2*sc,oy=H/2+(y0+y1)/2*sc,X=x=>ox+x*sc,Y=y=>oy-y*sc;
+  cx.clearRect(0,0,W,H);
+  const gs=[1,2,5,10,20,50,100,200].find(v=>v*sc>=30)||200;
+  cx.strokeStyle=css("--grid");cx.lineWidth=1;cx.setLineDash([]);cx.beginPath();
+  for(let gx=Math.ceil(-ox/sc/gs)*gs;gx<=(W-ox)/sc;gx+=gs){cx.moveTo(X(gx),0);cx.lineTo(X(gx),H)}
+  for(let gy=Math.ceil((oy-H)/sc/gs)*gs;gy<=oy/sc;gy+=gs){cx.moveTo(0,Y(gy));cx.lineTo(W,Y(gy))}
+  cx.stroke();
+  cx.fillStyle=css("--mute");cx.font="12px system-ui";cx.fillText("grid: "+gs+" step"+(gs>1?"s":""),10,H-10);
+  cx.strokeStyle=css("--raw");cx.lineWidth=1;cx.setLineDash([3,4]);cx.beginPath();
+  raw.forEach((p,i)=>i?cx.lineTo(X(p.x),Y(p.y)):cx.moveTo(X(p.x),Y(p.y)));cx.stroke();
+  cx.lineWidth=3.5;cx.lineCap="round";
+  segs.forEach((s,i)=>{
+    cx.strokeStyle=css(s.k=="line"?"--ok":"--turn");cx.setLineDash(s.partial?[6,5]:[]);
+    cx.beginPath();cx.moveTo(X(pts[i].x),Y(pts[i].y));cx.lineTo(X(pts[i+1].x),Y(pts[i+1].y));cx.stroke();
+  });
+  cx.setLineDash([]);
+  cx.fillStyle=css("--ink");cx.beginPath();cx.arc(X(0),Y(0),4,0,7);cx.fill();
+  if(steps.length){
+    const e=pts[pts.length-1],h=steps[steps.length-1].h;
+    cx.fillStyle=css("--turn");cx.beginPath();cx.arc(X(e.x),Y(e.y),6,0,7);cx.fill();
+    cx.strokeStyle=css("--turn");cx.lineWidth=2;cx.beginPath();cx.moveTo(X(e.x),Y(e.y));
+    cx.lineTo(X(e.x)+Math.sin(h*D)*18,Y(e.y)-Math.cos(h*D)*18);cx.stroke();
+  }
+  $("n").textContent=steps.length;
+  $("hd").textContent=Math.round(((heading%360)+360)%360)+"°";
+  $("ln").textContent=segs.filter(s=>s.k=="line").length;
+  $("hz").textContent=Math.round(hz);
+}
+
+async function start(){
+  if(!("DeviceMotionEvent" in window)){say("This browser has no motion sensors. Try the demo walk.");return}
+  if(DeviceMotionEvent.requestPermission){
+    try{if(await DeviceMotionEvent.requestPermission()!=="granted"){say("Motion access was denied. Allow it in your browser settings, then press Start again.");return}}
+    catch(e){say("Could not ask for motion access. Open this page directly in Safari and try again.");return}
+  }
+  calib={s:0,n:0,t0:performance.now(),bias:0,done:false};cand=[];walking=false;
+  g=[0,0,9.8];base=9.8;sm=p1=p2=0;peak=3;lastEv=performance.now();watch=performance.now();
+  window.addEventListener("devicemotion",onMotion);
+  try{lock=await navigator.wakeLock.request("screen")}catch(e){}
+  $("go").textContent="Stop";$("go").classList.add("on");say("Stand still for two seconds to calibrate the gyroscope.");
+  setTimeout(()=>{if(performance.now()-watch>1500&&$("go").textContent=="Stop")say("No sensor data. Open this page directly in your phone browser instead of an embedded view, or use the demo walk.")},2200);
+}
+function stop(){window.removeEventListener("devicemotion",onMotion);run=false;calib=null;try{lock&&lock.release()}catch(e){}$("go").textContent="Start";$("go").classList.remove("on");say("Stopped. Press Start to continue, or Data to copy the walk.")}
+$("go").onclick=()=>$("go").textContent=="Stop"?stop():start();
+$("reset").onclick=()=>{clearInterval(demoId);steps=[];cand=[];walking=false;heading=0;say("Cleared.");draw()};
+$("demo").onclick=()=>{
+  if($("go").textContent=="Stop")stop();
+  clearInterval(demoId);steps=[];heading=0;
+  const hs=[],add=(n,h)=>{for(let i=0;i<n;i++)hs.push(h)};
+  add(20,0);hs.push(30,60);add(22,90);hs.push(60,30);add(18,0);hs.push(-30,-60);add(15,-90);
+  let i=0;say("Simulated walk with noise and slow drift: two long turns and one short one.");
+  demoId=setInterval(()=>{
+    if(i>=hs.length){clearInterval(demoId);return}
+    steps.push({t:Date.now(),h:((hs[i]+i*.35+(Math.random()-.5)*14)%360+360)%360});i++;draw();
+  },110);
+};
+$("data").onclick=()=>{
+  const t=$("out");t.hidden=!t.hidden;if(t.hidden)return;
+  t.value=JSON.stringify({mode,heading_deg_per_step:steps.map(s=>Math.round(s.h*10)/10),segments:build().segs.map(s=>({kind:s.k,steps:s.n,heading:Math.round(s.h)}))});
+  t.focus();t.select();
+};
+addEventListener("deviceorientation",e=>{
+  const h=e.webkitCompassHeading!=null?e.webkitCompassHeading:(e.alpha!=null?(360-e.alpha)%360:null);
+  if(h==null)return;if(oLast!=null)dbg.o+=dif(h,oLast);oLast=h;
+});
+let tick=0;
+$("test").onclick=()=>{
+  const p=$("dbg");p.hidden=!p.hidden;if(p.hidden){clearInterval(tick);return}
+  const f=v=>(v>=0?"+":"")+v.toFixed(0)+"°";
+  tick=setInterval(()=>{
+    p.textContent="TURN TEST (tap this box to zero it)\nHold the phone as on a walk, turn on the spot one full 360° to the right, then read. Right turns should read about -360 (the sign may differ per phone, the size is what matters).\n\ngravity-projected: "+f(dbg.A)+"\naxis z (alpha): "+f(dbg.al)+"\naxis x (beta): "+f(dbg.be)+"\naxis y (gamma): "+f(dbg.ga)+"\nOS orientation: "+f(-dbg.o)+"\napp heading: "+f(-heading)+"\n\nraw a/b/g: "+rr.map(v=>v.toFixed(0)).join(" / ")+"\ngravity: "+g.map(v=>v.toFixed(1)).join(" / ");
+  },250);
+  p.onclick=()=>{dbg={A:0,al:0,be:0,ga:0,o:0};heading=0};
+};
+try{const sv=localStorage.getItem("minTurn");if(sv&&[...$("mt").options].some(o=>o.value==sv))$("mt").value=sv}catch(e){}
+$("mt").onchange=()=>{try{localStorage.setItem("minTurn",$("mt").value)}catch(e){}draw()};
+addEventListener("resize",fit);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",draw);
+fit();
+</script></body></html>
