@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Step Tracer</title>
+<style>
+:root{--bg:#f2f4f1;--panel:#fff;--ink:#1b2630;--mute:#5b6a77;--line:#d3dbd5;--grid:#e1e7e2;--ok:#0b7a6a;--turn:#c2410c;--btn:#1b2630;--btnt:#fff;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#0f161c;--panel:#17212a;--ink:#e6edf2;--mute:#93a2af;--line:#2a3743;--grid:#1c2832;--ok:#2dd4bf;--turn:#fb923c;--btn:#e6edf2;--btnt:#0f161c}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#0f161c;--panel:#17212a;--ink:#e6edf2;--mute:#93a2af;--line:#2a3743;--grid:#1c2832;--ok:#2dd4bf;--turn:#fb923c;--btn:#e6edf2;--btnt:#0f161c}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;max-width:560px;margin:0 auto}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:10px 16px 6px}
+.big{font-size:40px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.k{color:var(--mute);font-size:12px}.v{font-weight:600;font-size:20px;font-variant-numeric:tabular-nums}
+.dw{display:flex;align-items:center;gap:8px}#dial{width:60px;height:60px}
+.dot{width:10px;height:10px;border-radius:50%;margin-left:auto;background:var(--mute)}
+main{flex:1;min-height:0;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;overflow:hidden}
+#msg{font-size:13px;color:var(--mute);padding:0 16px;text-align:center;min-height:18px}
+#sq{width:min(94%,52vh,calc(100vh - 360px));min-width:200px;aspect-ratio:1;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+#cv{width:100%;height:100%;display:block}
+#sheet{position:absolute;inset:0;background:var(--bg);overflow:auto;padding:12px 16px;z-index:5}
+table{width:100%;border-collapse:collapse;font-size:14px;margin:6px 0 14px}
+th,td{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left}th{color:var(--mute);font-weight:500;font-size:12px}
+input[type=number]{width:84px;font:inherit;padding:5px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
+footer{background:var(--panel);border-top:1px solid var(--line);padding:10px 16px 12px;display:grid;gap:10px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button,select{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:9px 12px;border-radius:8px;cursor:pointer}
+select{font-weight:600;padding:5px 6px}
+button.on,button.go{background:var(--btn);color:var(--btnt);border-color:var(--btn)}
+button.go{flex:1;font-weight:600}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--ok);outline-offset:2px}
+.hint{color:var(--mute);font-size:13px}
+label{font-size:13px;color:var(--mute);display:flex;gap:6px;align-items:center}
+textarea{width:100%;height:90px;box-sizing:border-box;font:12px monospace;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px}
+pre{font:12px/1.5 monospace;white-space:pre-wrap;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;margin:0 0 6px}
+[hidden]{display:none!important}
+</style></head><body>
+<header>
+  <div><div class="big" id="n">0</div><div class="k">steps</div></div>
+  <div class="dw"><canvas id="dial" width="120" height="120"></canvas><div><div class="v" id="hd">0°</div><div class="k" id="hk">turned</div></div></div>
+  <div><div class="v" id="tc">0</div><div class="k">turns</div></div>
+  <div><select id="mt" aria-label="Minimum turn angle"><option value="15">15°</option><option value="25">25°</option><option value="35">35°</option><option value="45" selected>45°</option><option value="60">60°</option><option value="75">75°</option><option value="90">90°</option></select><div class="k">min turn</div></div>
+  <span class="dot" id="dot" title="Sensor rate indicator"></span>
+</header>
+<main>
+  <div id="msg">Choose how you carry the phone, press Start and stand still for two seconds.</div>
+  <div id="sq"><canvas id="cv"></canvas></div>
+  <section id="sheet" hidden>
+    <div class="row"><b style="flex:1">Turns</b><button id="x">Close</button></div>
+    <div id="tt"></div>
+    <b>Straights</b>
+    <div id="ss"></div>
+    <div class="hint">Leave a field empty to keep the measured value. Corrections rotate or stretch everything after them. Make corrections after you press Stop.</div>
+  </section>
+</main>
+<footer>
+  <div class="row"><button id="m-hand" class="on">Phone in hand</button><button id="m-pocket">Pocket or bag</button></div>
+  <div class="hint" id="hint"></div>
+  <div class="row"><button class="go" id="go">Start</button><button id="reset">Reset</button><button id="data">Data</button><button id="test">Test</button><button id="turns">Turns</button></div>
+  <button id="demo">Demo walk</button>
+  <textarea id="out" hidden readonly></textarea>
+  <div id="tp" hidden><pre id="dbg"></pre><label><input type="checkbox" id="flip"> Mirror turns (pocket mode, if left and right look swapped)</label></div>
+</footer>
+<script>
+const $=id=>document.getElementById(id),D=Math.PI/180;
+const dif=(a,b)=>((a-b+540)%360)-180;
+const cmean=hs=>{let s=0,c=0;for(const h of hs){s+=Math.sin(h*D);c+=Math.cos(h*D)}return(Math.atan2(s,c)/D+360)%360};
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const say=t=>$("msg").textContent=t;
+const P={hand:{a:.3,floor:1.1,minInt:320,g:.05,hint:"Phone in hand: heading comes from the compass, checked against the gyroscope. Hold it steady, flat or upright."},
+ pocket:{a:.18,floor:1.6,minInt:380,g:.02,hint:"Pocket or bag: heading comes from phone orientation, bridged by the gyroscope. The dial shows the angle turned since the start."}};
+let mode="hand",calib=null,steps=[],g=[0,0,9.8],base=9.8,sm=0,p1=0,p2=0,lastEv=0,lastStep=0,peak=3,hz=0,lock=null,demoId=0,watch=0,cand=[],walking=false,lastAcc=0,lastUI=0,tick=0;
+let HD=0,osYaw=0,gyroYaw=0,rotRecent=0,hAbs=null,hIos=null,hRel=null,Rold=null,lastOri=0,useC=false,hInit=false,rejN=0,rr=[0,0,0],cw=0,ch=0;
+let edT={},edS={},ign=new Set();
+const cx=$("cv").getContext("2d");
+
+function setMode(m){mode=m;hInit=false;$("m-hand").classList.toggle("on",m=="hand");$("m-pocket").classList.toggle("on",m=="pocket");$("hint").textContent=P[m].hint}
+$("m-hand").onclick=()=>setMode("hand");$("m-pocket").onclick=()=>setMode("pocket");setMode("hand");
+
+/* orientation: compass heading (absolute) and vertical-axis rotation (relative) from the OS-fused orientation */
+function ori(e,abs){
+  if(e.alpha==null)return;
+  const A=e.alpha*D,B=e.beta*D,C=e.gamma*D,cA=Math.cos(A),sA=Math.sin(A),cB=Math.cos(B),sB=Math.sin(B),cG=Math.cos(C),sG=Math.sin(C);
+  const R=[[cA*cG-sA*sB*sG,-sA*cB,cA*sG+sA*sB*cG],[sA*cG+cA*sB*sG,cA*cB,sA*sG-cA*sB*cG],[-cB*sG,sB,cB*cG]];
+  const h=(Math.atan2(R[0][1]-R[0][2],R[1][1]-R[1][2])/D+360)%360;
+  if(abs){hAbs=h;return}
+  hRel=h;if(e.webkitCompassHeading!=null)hIos=e.webkitCompassHeading;
+  if(Rold){
+    let q10=0,q01=0;for(let k=0;k<3;k++){q10+=R[1][k]*Rold[0][k];q01+=R[0][k]*Rold[1][k]}
+    const d=(q10-q01)/2/D;osYaw-=d*($("flip").checked?-1:1);rotRecent+=Math.abs(d);
+  }
+  Rold=R;lastOri=performance.now();
+}
+addEventListener("deviceorientationabsolute",e=>ori(e,true));
+addEventListener("deviceorientation",e=>ori(e,e.absolute===true));
+
+function updateH(){
+  const t=hIos!=null?hIos:hAbs;
+  useC=mode=="hand"&&t!=null;
+  if(useC){
+    if(!hInit){HD=t;hInit=true;rejN=0;return}
+    const d=dif(t,HD);
+    if(Math.abs(d)>25&&rotRecent<6){if(++rejN>120){HD=t;rejN=0}}
+    else{rejN=0;HD=(HD+.2*d+360)%360}
+  }else HD=((osYaw%360)+360)%360;
+}
+
+function onMotion(e){
+  const a=e.accelerationIncludingGravity,r=e.rotationRate,now=performance.now();
+  if(!a||a.x==null||!calib)return;
+  const dt=Math.min(Math.max((now-lastEv)/1000,.001),.2);lastEv=now;watch=now;
+  hz+=(1/dt-hz)*.05;
+  const q=P[mode];
+  g[0]+=q.g*(a.x-g[0]);g[1]+=q.g*(a.y-g[1]);g[2]+=q.g*(a.z-g[2]);
+  const gm=Math.hypot(g[0],g[1],g[2])||9.8;
+  rr=[r?r.alpha||0:0,r?r.beta||0:0,r?r.gamma||0:0];
+  let w=(rr[0]*g[2]+rr[1]*g[0]+rr[2]*g[1])/gm;
+  if(!calib.done){
+    calib.s+=w;calib.n++;
+    if(now-calib.t0>2000){calib.bias=calib.s/calib.n;calib.done=true;say("Tracing. Walk normally.")}
+    return;
+  }
+  w-=calib.bias;if(Math.abs(w)<.8)w=0;
+  gyroYaw-=w*dt;
+  if(now-lastOri>300)osYaw-=w*dt*($("flip").checked?-1:1);
+  rotRecent*=.98;updateH();
+  if(now-lastUI>90){lastUI=now;ui()}
+  const gmag=Math.hypot(rr[0],rr[1],rr[2]),m=Math.hypot(a.x,a.y,a.z);
+  base+=.02*(m-base);sm+=q.a*((m-base)-sm);
+  if(p1>p2&&p1>=sm&&now-lastStep>q.minInt&&p1>Math.max(q.floor,.5*peak)&&gmag<300){
+    onPeak(now,HD);peak=.8*peak+.2*p1;lastStep=now;
+  }
+  p2=p1;p1=sm;
+  if(now-lastStep>2500)peak=Math.max(q.floor*2,peak*.995);
+}
+function commit(h){steps.push({t:Date.now(),h});draw()}
+function onPeak(now,h){
+  if(walking&&now-lastAcc>1500)walking=false;
+  if(walking){lastAcc=now;commit(h);return}
+  cand=cand.filter(c=>now-c.t<1800);cand.push({t:now,h});
+  if(cand.length>=3){
+    const iv=[cand[1].t-cand[0].t,cand[2].t-cand[1].t];
+    if(iv.every(v=>v>=300&&v<=1100)&&Math.abs(iv[0]-iv[1])<.4*Math.max(...iv)){walking=true;lastAcc=now;cand.forEach(c=>commit(c.h));cand=[]}
+    else cand.shift();
+  }
+}
+
+/* analysis: steady stretches of heading become straights, changes between them become turns */
+function analyze(){
+  const hs=steps.map(s=>s.h),n=hs.length,minT=+$("mt").value,tol=Math.min(25,Math.max(10,minT/2));
+  const st=hs.map((h,i)=>i>1&&Math.max(Math.abs(dif(hs[i-2],h)),Math.abs(dif(hs[i-1],h)),Math.abs(dif(hs[i-2],hs[i-1])))<tol);
+  const pl=[];
+  for(let i=0;i<n;){if(!st[i]){i++;continue}let j=i;while(j+1<n&&st[j+1])j++;pl.push({a:i-2,b:j});i=j+1}
+  const gr=[],turns=[];
+  for(const p of pl){
+    p.h=cmean(hs.slice(p.a,p.b+1));
+    const q=gr[gr.length-1];
+    if(!q){gr.push({a:p.a,b:p.b,h:p.h});continue}
+    const ang=dif(p.h,q.h);
+    if(Math.abs(ang)<minT){q.b=p.b;q.h=cmean(hs.slice(q.a,p.b+1))}
+    else{turns.push({at:Math.round((q.b+p.a+1)/2),angle:ang});gr.push({a:p.a,b:p.b,h:p.h})}
+  }
+  const keep=turns.filter(t=>!ign.has(t.at)),bd=[0,...keep.map(t=>t.at),n],sts=[];
+  for(let k=0;k<bd.length-1;k++){
+    let lo=bd[k]+(k>0?2:0),hi=bd[k+1]-(k<bd.length-2?2:0);if(hi<=lo){lo=bd[k];hi=bd[k+1]}
+    sts.push({start:bd[k],n:bd[k+1]-bd[k],h:hi>lo?cmean(hs.slice(lo,hi)):(n?hs[n-1]:0)});
+  }
+  return{turns:keep,st:sts};
+}
+function path(L){
+  let h=L.st[0].h,x=0,y=0;const pts=[{x,y}],mk=[];
+  L.st.forEach((s,k)=>{
+    if(k>0){const t=L.turns[k-1];h+=edT[t.at]!=null?edT[t.at]:t.angle;mk.push({x,y,k})}
+    const c=edS[s.start]!=null?edS[s.start]:s.n;
+    x+=c*Math.sin(h*D);y+=c*Math.cos(h*D);pts.push({x,y});
+  });
+  return{pts,mk,h};
+}
+
+function dial(){
+  const c=$("dial").getContext("2d");c.clearRect(0,0,120,120);
+  c.strokeStyle=css("--line");c.lineWidth=4;c.beginPath();c.arc(60,60,50,0,7);c.stroke();
+  c.fillStyle=css("--mute");c.font="bold 18px system-ui";c.textAlign="center";c.fillText(useC?"N":"0",60,26);
+  const x=60+Math.sin(HD*D)*38,y=60-Math.cos(HD*D)*38;
+  c.strokeStyle=css("--turn");c.lineWidth=6;c.lineCap="round";c.beginPath();c.moveTo(60,60);c.lineTo(x,y);c.stroke();
+  c.fillStyle=css("--ink");c.beginPath();c.arc(60,60,5,0,7);c.fill();
+}
+function ui(){
+  dial();$("hd").textContent=Math.round(HD)+"°";$("hk").textContent=useC?"compass":"turned";
+  $("dot").style.background=hz>=30?"var(--ok)":hz>0?"#d97706":"#dc2626";
+}
+function fit(){const r=$("cv").getBoundingClientRect(),d=devicePixelRatio||1;$("cv").width=r.width*d;$("cv").height=r.height*d;cx.setTransform(d,0,0,d,0,0);cw=r.width;ch=r.height;draw()}
+function draw(){
+  const L=analyze(),{pts,mk}=path(L);
+  $("n").textContent=steps.length;$("tc").textContent=L.turns.length;ui();
+  if(!cw)return;
+  let x0=-12,x1=12,y0=-12,y1=12;
+  for(const p of pts){x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);y0=Math.min(y0,p.y);y1=Math.max(y1,p.y)}
+  const m=26,sc=Math.min((cw-2*m)/(x1-x0),(ch-2*m)/(y1-y0),14),ox=cw/2-(x0+x1)/2*sc,oy=ch/2+(y0+y1)/2*sc,X=x=>ox+x*sc,Y=y=>oy-y*sc;
+  cx.clearRect(0,0,cw,ch);
+  const gs=[1,2,5,10,20,50,100,200].find(v=>v*sc>=30)||200;
+  cx.strokeStyle=css("--grid");cx.lineWidth=1;cx.beginPath();
+  for(let gx=Math.ceil(-ox/sc/gs)*gs;gx<=(cw-ox)/sc;gx+=gs){cx.moveTo(X(gx),0);cx.lineTo(X(gx),ch)}
+  for(let gy=Math.ceil((oy-ch)/sc/gs)*gs;gy<=oy/sc;gy+=gs){cx.moveTo(0,Y(gy));cx.lineTo(cw,Y(gy))}
+  cx.stroke();
+  cx.fillStyle=css("--mute");cx.font="12px system-ui";cx.textAlign="left";cx.fillText("grid: "+gs+" step"+(gs>1?"s":""),8,ch-8);
+  cx.strokeStyle=css("--ok");cx.lineWidth=3.5;cx.lineCap="round";cx.lineJoin="round";cx.beginPath();
+  pts.forEach((p,i)=>i?cx.lineTo(X(p.x),Y(p.y)):cx.moveTo(X(p.x),Y(p.y)));cx.stroke();
+  cx.fillStyle=css("--ink");cx.beginPath();cx.arc(X(0),Y(0),4,0,7);cx.fill();
+  cx.textAlign="center";cx.font="bold 11px system-ui";
+  for(const k of mk){cx.fillStyle=css("--turn");cx.beginPath();cx.arc(X(k.x),Y(k.y),9,0,7);cx.fill();cx.fillStyle=css("--btnt");cx.fillText(k.k,X(k.x),Y(k.y)+4)}
+  if(steps.length){const e=pts[pts.length-1];cx.fillStyle=css("--ink");cx.beginPath();cx.arc(X(e.x),Y(e.y),5,0,7);cx.fill()}
+}
+
+/* tables */
+const fa=a=>Math.abs(Math.round(a))+"° "+(a>=0?"right":"left");
+function fill(){
+  const L=analyze();
+  $("tt").innerHTML=L.turns.length?'<table><tr><th>#</th><th>Step</th><th>Measured</th><th>Correct to (°)</th><th></th></tr>'+L.turns.map((t,i)=>`<tr><td>${i+1}</td><td>${t.at}</td><td>${fa(t.angle)}</td><td><input type="number" inputmode="decimal" data-t="${t.at}" value="${edT[t.at]??""}" placeholder="${Math.round(t.angle)}" aria-label="Correct turn ${i+1}"></td><td><button data-d="${t.at}" aria-label="Delete turn ${i+1}">✕</button></td></tr>`).join("")+'</table><div class="hint">Positive = right, negative = left. ✕ removes a false turn.</div>':'<p class="hint">No turns recorded yet.</p>';
+  $("ss").innerHTML='<table><tr><th>#</th><th>Measured steps</th><th>Heading</th><th>Correct to (steps)</th></tr>'+L.st.map((s,k)=>`<tr><td>${k+1}</td><td>${s.n}</td><td>${Math.round(s.h)}°</td><td><input type="number" step="1" inputmode="numeric" data-s="${s.start}" value="${edS[s.start]??""}" placeholder="${s.n}" aria-label="Correct straight ${k+1}"></td></tr>`).join("")+'</table>';
+}
+$("sheet").onchange=e=>{
+  const t=e.target,v=t.value===""?null:+t.value;
+  if(t.dataset.t!=null){if(v==null)delete edT[t.dataset.t];else edT[t.dataset.t]=v}
+  if(t.dataset.s!=null){if(v==null)delete edS[t.dataset.s];else edS[t.dataset.s]=v}
+  draw();
+};
+$("sheet").onclick=e=>{const d=e.target.dataset.d;if(d!=null){ign.add(+d);fill();draw()}};
+$("turns").onclick=()=>{$("sheet").hidden=false;fill()};
+$("x").onclick=()=>$("sheet").hidden=true;
+$("mt").onchange=()=>{
+  if(Object.keys(edT).length+Object.keys(edS).length+ign.size&&!confirm("Changing the minimum turn re-analyzes the walk and discards your corrections. Continue?")){$("mt").value=$("mt").dataset.v;return}
+  edT={};edS={};ign=new Set();$("mt").dataset.v=$("mt").value;try{localStorage.setItem("minTurn",$("mt").value)}catch(e){}draw();
+};
+try{const sv=localStorage.getItem("minTurn");if(sv&&[...$("mt").options].some(o=>o.value==sv))$("mt").value=sv}catch(e){}
+$("mt").dataset.v=$("mt").value;
+
+/* controls */
+async function start(){
+  if(!("DeviceMotionEvent" in window)){say("This browser has no motion sensors. Try the demo walk.");return}
+  if(DeviceMotionEvent.requestPermission){
+    try{if(await DeviceMotionEvent.requestPermission()!=="granted"){say("Motion access was denied. Allow it in your browser settings, then press Start again.");return}}
+    catch(e){say("Could not ask for motion access. Open this page directly in Safari and try again.");return}
+  }
+  if(window.DeviceOrientationEvent&&DeviceOrientationEvent.requestPermission){try{await DeviceOrientationEvent.requestPermission()}catch(e){}}
+  clearInterval(demoId);
+  if(!steps.length)osYaw=0;
+  calib={s:0,n:0,t0:performance.now(),bias:0,done:false};cand=[];walking=false;hInit=false;
+  g=[0,0,9.8];base=9.8;sm=p1=p2=0;peak=3;lastEv=performance.now();watch=performance.now();
+  window.addEventListener("devicemotion",onMotion);
+  try{lock=await navigator.wakeLock.request("screen")}catch(e){}
+  $("go").textContent="Stop";$("go").classList.add("on");say("Stand still for two seconds to calibrate.");
+  setTimeout(()=>{if(performance.now()-watch>1500&&$("go").textContent=="Stop")say("No sensor data. Open this page directly in your phone browser, or use the demo walk.")},2200);
+}
+function stop(){window.removeEventListener("devicemotion",onMotion);calib=null;try{lock&&lock.release()}catch(e){}$("go").textContent="Start";$("go").classList.remove("on");say("Stopped. Open Turns to review and correct the walk.")}
+$("go").onclick=()=>$("go").textContent=="Stop"?stop():start();
+$("reset").onclick=()=>{clearInterval(demoId);steps=[];cand=[];walking=false;edT={};edS={};ign=new Set();osYaw=0;gyroYaw=0;HD=0;hInit=false;say("Cleared.");draw()};
+$("demo").onclick=()=>{
+  if($("go").textContent=="Stop")stop();
+  $("reset").onclick();
+  const hs=[],add=(n,h)=>{for(let i=0;i<n;i++)hs.push(h)};
+  add(20,0);hs.push(40,75);add(22,90);hs.push(60,30);add(18,0);hs.push(-30,-60);add(15,-90);
+  let i=0;say("Simulated walk with noise and drift: three turns.");
+  demoId=setInterval(()=>{
+    if(i>=hs.length){clearInterval(demoId);return}
+    HD=((hs[i]+i*.3+(Math.random()-.5)*10)%360+360)%360;steps.push({t:Date.now(),h:HD});i++;draw();
+  },110);
+};
+$("data").onclick=()=>{
+  const t=$("out");t.hidden=!t.hidden;if(t.hidden)return;
+  const L=analyze();
+  t.value=JSON.stringify({mode,minTurn:+$("mt").value,headingPerStep:steps.map(s=>Math.round(s.h)),
+    turns:L.turns.map(x=>({atStep:x.at,measured:Math.round(x.angle),corrected:edT[x.at]??null})),
+    straights:L.st.map(s=>({startStep:s.start,steps:s.n,heading:Math.round(s.h),correctedSteps:edS[s.start]??null}))});
+  t.focus();t.select();
+};
+$("test").onclick=()=>{
+  const p=$("dbg"),tp=$("tp");tp.hidden=!tp.hidden;clearInterval(tick);if(tp.hidden)return;
+  const f=v=>v==null?"-":(v>=0?"+":"")+v.toFixed(0)+"°";
+  tick=setInterval(()=>{p.textContent="SPIN TEST (tap this box to zero it)\nPress Start first. Turn on the spot 360° to the right, holding the phone as on a walk. Right turns should read about +360 on each yaw line.\n\nheading used: "+f(HD)+"  ("+(useC?"compass":"relative")+")\norientation yaw: "+f(osYaw)+"\ngyro yaw: "+f(gyroYaw)+"\ncompass ios / abs: "+f(hIos)+" / "+f(hAbs)+"\nrelative matrix heading: "+f(hRel)+"\nraw rates a/b/g: "+rr.map(v=>v.toFixed(0)).join(" / ")+"\ngravity: "+g.map(v=>v.toFixed(1)).join(" / ")+"\nsensor rate: "+hz.toFixed(0)+" Hz"},250);
+  p.onclick=()=>{osYaw=0;gyroYaw=0};
+};
+addEventListener("resize",fit);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",draw);
+fit();
+</script></body></html>
